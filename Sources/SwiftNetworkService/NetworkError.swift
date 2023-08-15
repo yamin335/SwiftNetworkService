@@ -20,7 +20,7 @@ public enum NetworkError: Error {
     /// `NetworkRequest` got cancelled due to the `Network` unavailability
     case noInternetError
     /// `Error` that does not match any specified error types.
-    case unknownError
+    case unknownError(String)
 
     /// `Text` representation for each error type
     var localizedDescription: String {
@@ -35,8 +35,8 @@ public enum NetworkError: Error {
             return "Server error with status code: \(code)"
         case .noInternetError:
             return "Failed to connect due to the network"
-        case .unknownError:
-            return "Unknown network error"
+        case .unknownError(let description):
+            return "Unknown Error: \"\(description)\""
         }
     }
 }

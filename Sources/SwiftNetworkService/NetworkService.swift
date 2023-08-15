@@ -18,6 +18,13 @@ public protocol NetworkServiceProtocol {
      - Returns: `AnyPublisher` with the specified response `Type` and `NetworkError` if there is any
      */
     func perform<T: NetworkRequestProtocol>(_ request: T) -> AnyPublisher<T.Response, NetworkError>
+    /**
+     Performs a specified network request with the provided request properties
+     - Parameter request: A network request property that contains all information about the network call
+     - Returns: `Response` with the specified response `Type`
+     - Throws: `NetworkError` if there is any
+     */
+    func perform<T: NetworkRequestProtocol>(_ request: T) async throws -> T.Response
 }
 
 /// Protocol that helps `URLSession` to retturn a `AnyPublisher` wrapping all properties e. g. `Response`, `Error`.
@@ -29,6 +36,12 @@ public protocol URLSessionProtocol {
      - Returns: `AnyPublisher` wrapping  `Data` object with `Response` and `NetworkError`
      */
     func sessionDataTaskPublisher(for request: URLRequest) -> AnyPublisher<(data: Data, response: URLResponse), URLError>
+    /**
+     This methos is responsible for helping a `URLSession` object to provide `Response` via `AnyPublisher`
+     - Parameter request: A `URLRequest` object
+     - Returns: `AnyPublisher` wrapping  `Data` object with `Response` and `NetworkError`
+     */
+    func sessionDataAsyncTask(for request: URLRequest) async throws -> (data: Data, response: URLResponse)
 }
 
 /// Extension that provides `URLSession` object by a concrete implementation of `URLSessionProtocol`.
@@ -38,6 +51,10 @@ extension URLSession: URLSessionProtocol {
         return self.dataTaskPublisher(for: request)
             .map { ($0.data, $0.response) }
             .eraseToAnyPublisher()
+    }
+    
+    public func sessionDataAsyncTask(for request: URLRequest) async throws -> (data: Data, response: URLResponse) {
+        return try await self.data(for: request)
     }
 }
 
@@ -58,7 +75,7 @@ public final class NetworkService: NetworkServiceProtocol {
     }
 
     /**
-     Performs a network call with the specified `NetworkRequest` and returns the response data or propagate errors if there is any
+     Performs a network call with the specified `NetworkRequest` and returns the response data wrapped with a publisher or propagate errors if there is any
      - Parameter request: An object of `NetworkRequest`
      */
     public func perform<T>(_ request: T) -> AnyPublisher<T.Response, NetworkError> where T : NetworkRequestProtocol {
@@ -115,10 +132,74 @@ public final class NetworkService: NetworkServiceProtocol {
                 } else if error is DecodingError {
                     return NetworkError.decodingError
                 } else {
-                    return NetworkError.unknownError
+                    return NetworkError.unknownError(error.localizedDescription)
                 }
             }
             .receive(on: RunLoop.main)
             .eraseToAnyPublisher()
+    }
+    
+    /**
+     Performs a network call with the specified `NetworkRequest` and returns the response data or throws errors if there is any
+     - Parameter request: An object of `NetworkRequest`
+     */
+    public func perform<T>(_ request: T) async throws -> T.Response where T : NetworkRequestProtocol {
+        
+        guard let stringUrl = request.url, var urlComponents = URLComponents(string: stringUrl) else {
+            throw NetworkError.invalidRequest
+        }
+        
+        var queryItems = [URLQueryItem]()
+        
+        if let queryParams = request.queryParam {
+            for item in queryParams {
+                queryItems.append(URLQueryItem(name: item.key, value: item.value))
+            }
+        }
+        
+        urlComponents.queryItems = queryItems
+        
+        guard let url = urlComponents.url else {
+            throw NetworkError.invalidRequest
+        }
+        
+        var urlRequest = URLRequest(url: url)
+        urlRequest.addValue("application/json", forHTTPHeaderField: "Content-Type")
+        urlRequest.httpMethod = request.type.rawValue
+        
+        if let headers = request.headers {
+            for (key, value) in headers {
+                urlRequest.addValue(value, forHTTPHeaderField: key)
+            }
+        }
+        
+        if let parameters = request.httpBodyParam {
+            do {
+                let jsonData = try JSONSerialization.data(withJSONObject: parameters, options: [])
+                urlRequest.httpBody = jsonData
+            } catch {
+                throw NetworkError.encodingError
+            }
+        }
+        
+        do {
+            let (data, response) = try await urlSession.sessionDataAsyncTask(for: urlRequest)
+            guard let httpResponse = response as? HTTPURLResponse, 200..<300 ~= httpResponse.statusCode else {
+                throw NetworkError.serverError((response as? HTTPURLResponse)?.statusCode ?? 500)
+            }
+            
+            let decoder = JSONDecoder()
+            decoder.keyDecodingStrategy = .convertFromSnakeCase
+            let res = try decoder.decode(T.Response.self, from: data)
+            return res
+        } catch {
+            if let urlError = error as? URLError, urlError.code == URLError.notConnectedToInternet {
+                throw NetworkError.noInternetError
+            } else if error is DecodingError {
+                throw NetworkError.decodingError
+            } else {
+                throw NetworkError.unknownError(error.localizedDescription)
+            }
+        }
     }
 }

@@ -1,3 +1,3 @@
 # SwiftNetworkService
 
-A description of this package.
+SwiftNetworkService uses URLSession for making network request.

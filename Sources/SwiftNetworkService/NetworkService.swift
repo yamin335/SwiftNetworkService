@@ -48,13 +48,13 @@ public protocol URLSessionProtocol {
 @available(iOS 13.0, *)
 extension URLSession: URLSessionProtocol {
     public func sessionDataTaskPublisher(for request: URLRequest) -> AnyPublisher<(data: Data, response: URLResponse), URLError> {
-        return self.dataTaskPublisher(for: request)
+        self.dataTaskPublisher(for: request)
             .map { ($0.data, $0.response) }
             .eraseToAnyPublisher()
     }
     
     public func sessionDataAsyncTask(for request: URLRequest) async throws -> (data: Data, response: URLResponse) {
-        return try await self.data(for: request)
+        try await self.data(for: request)
     }
 }
 
@@ -145,7 +145,7 @@ public final class NetworkService: NetworkServiceProtocol {
      */
     public func perform<T>(_ request: T) async throws -> T.Response where T : NetworkRequestProtocol {
         
-        guard let stringUrl = request.url, var urlComponents = URLComponents(string: stringUrl) else {
+        guard let stringUrl = request.url, !stringUrl.isEmpty, var urlComponents = URLComponents(string: stringUrl) else {
             throw NetworkError.invalidRequest
         }
         
@@ -193,7 +193,9 @@ public final class NetworkService: NetworkServiceProtocol {
             let res = try decoder.decode(T.Response.self, from: data)
             return res
         } catch {
-            if let urlError = error as? URLError, urlError.code == URLError.notConnectedToInternet {
+            if error is NetworkError {
+                throw error
+            } else if let urlError = error as? URLError, urlError.code == URLError.notConnectedToInternet {
                 throw NetworkError.noInternetError
             } else if error is DecodingError {
                 throw NetworkError.decodingError

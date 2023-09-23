@@ -8,7 +8,7 @@
 import Foundation
 
 /// Defining error types with their messages for `NetworkRequest`.
-public enum NetworkError: Error {
+public enum NetworkError: Error, Equatable {
     /// `NetworkRequest` is not valid
     case invalidRequest
     /// `Error` occurred encoding `NetworkRequest` paarameters
@@ -26,17 +26,17 @@ public enum NetworkError: Error {
     var localizedDescription: String {
         switch self {
         case .invalidRequest:
-            return "Invalid request"
+            "Invalid request"
         case .encodingError:
-            return "Failed to encode request parameters"
+            "Failed to encode request parameters"
         case .decodingError:
-            return "Failed to decode server response"
+            "Failed to decode server response"
         case .serverError(let code):
-            return "Server error with status code: \(code)"
+            "Server error with status code: \(code)"
         case .noInternetError:
-            return "Failed to connect due to the network"
+            "Failed to connect due to the network"
         case .unknownError(let description):
-            return "Unknown Error: \"\(description)\""
+            "Unknown Error: \"\(description)\""
         }
     }
 }
